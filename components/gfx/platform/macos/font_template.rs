@@ -60,6 +60,7 @@ unsafe impl Sync for FontTemplateData {}
 
 impl FontTemplateData {
     pub fn new(identifier: Atom, font_data: Option<Vec<u8>>) -> Result<FontTemplateData, IoError> {
+        info!("creating FontTemplateData for {} with {}", identifier, if font_data.is_none() { "no " } else { "" });
         Ok(FontTemplateData {
             ctfont: CachedCTFont(Mutex::new(HashMap::new())),
             identifier: identifier.to_owned(),
@@ -71,12 +72,15 @@ impl FontTemplateData {
     pub fn ctfont(&self, pt_size: f64) -> Option<CTFont> {
         let mut ctfonts = self.ctfont.lock().unwrap();
         let pt_size_key = Au::from_f64_px(pt_size);
+        info!("getting font for {:?} with {}", self.identifier, pt_size);
         if !ctfonts.contains_key(&pt_size_key) {
             // If you pass a zero font size to one of the Core Text APIs, it'll replace it with
             // 12.0. We don't want that! (Issue #10492.)
             let clamped_pt_size = pt_size.max(0.01);
+            info!("instantiating font for {:?} and {}", self.identifier, clamped_pt_size);
             let ctfont = match self.font_data {
                 Some(ref bytes) => {
+                    info!("getting cgfont from bytes");
                     let fontprov = CGDataProvider::from_buffer(bytes.clone());
                     let cgfont_result = CGFont::from_data_provider(fontprov);
                     match cgfont_result {
@@ -86,12 +90,19 @@ impl FontTemplateData {
                         Err(_) => None,
                     }
                 },
-                None => core_text::font::new_from_name(&*self.identifier, clamped_pt_size).ok(),
+                None => {
+                    info!("getting ctfont from name");
+                    core_text::font::new_from_name(&*self.identifier, clamped_pt_size).ok()
+                }
             };
             if let Some(ctfont) = ctfont {
+                info!("inserting ctfont");
                 ctfonts.insert(pt_size_key, ctfont);
+            } else {
+                info!("no ctfont to insert");
             }
         }
+        info!("about to try to return cached value for {:?}: {}present", pt_size_key, if !ctfonts.contains_key(&pt_size_key) { "not " } else { "" });
         ctfonts.get(&pt_size_key).map(|ctfont| (*ctfont).clone())
     }
 
@@ -99,10 +110,12 @@ impl FontTemplateData {
     /// operation (depending on the platform) which performs synchronous disk I/O
     /// and should never be done lightly.
     pub fn bytes(&self) -> Vec<u8> {
+        info!("FontTemplateData::bytes - trying to return bytes in memory");
         if let Some(font_data) = self.bytes_if_in_memory() {
             return font_data;
         }
 
+        info!("FontTemplateData::bytes - getting ctfont for 0.0");
         let path = ServoUrl::parse(
             &*self
                 .ctfont(0.0)
@@ -116,6 +129,7 @@ impl FontTemplateData {
         .as_url()
         .to_file_path()
         .expect("Core Text font didn't name a path!");
+        info!("getting bytes for {:?} from {:?}", self.identifier, path.display());
         let mut bytes = Vec::new();
         File::open(path)
             .expect("Couldn't open font file!")
@@ -127,11 +141,13 @@ impl FontTemplateData {
     /// Returns a clone of the bytes in this font if they are in memory. This function never
     /// performs disk I/O.
     pub fn bytes_if_in_memory(&self) -> Option<Vec<u8>> {
+        info!("FontTemplateData::bytes_if_in_memory: has bytes is {}", self.font_data.is_some());
         self.font_data.as_ref().map(|bytes| (**bytes).clone())
     }
 
     /// Returns the native font that underlies this font template, if applicable.
     pub fn native_font(&self) -> Option<NativeFontHandle> {
+        info!("FontTemplateData::native_font - getting ctfont for 0.0");
         self.ctfont(0.0)
             .map(|ctfont| NativeFontHandle(ctfont.copy_to_CGFont()))
     }

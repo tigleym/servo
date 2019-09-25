@@ -233,9 +233,10 @@ impl FontHandleMethods for FontHandle {
     }
 
     fn glyph_index(&self, codepoint: char) -> Option<GlyphId> {
-        let characters: [UniChar; 1] = [codepoint as UniChar];
-        let mut glyphs: [CGGlyph; 1] = [0 as CGGlyph];
-        let count: CFIndex = 1;
+        let mut characters: [UniChar; 2] = [0 as UniChar, 0];
+        let len = codepoint.encode_utf16(&mut characters).len();
+        let mut glyphs: [CGGlyph; 2] = [0 as CGGlyph, 0];
+        let count = len as CFIndex;
 
         let result = unsafe {
             self.ctfont
@@ -243,6 +244,12 @@ impl FontHandleMethods for FontHandle {
         };
 
         if !result || glyphs[0] == 0 {
+            info!("checking index for glyph {} ({:x})", codepoint, codepoint as usize);
+            if !result {
+                info!("get_glyphs_for_characters returned false");
+            } else if glyphs[0] == 0 {
+                info!("glyphs[0] is 0");
+            }
             // No glyph for this character
             return None;
         }
@@ -312,7 +319,7 @@ impl FontHandleMethods for FontHandle {
             average_advance: average_advance,
             line_gap: Au::from_f64_px(line_gap),
         };
-        debug!(
+        info!(
             "Font metrics (@{} pt): {:?}",
             self.ctfont.pt_size() as f64,
             metrics

@@ -372,6 +372,8 @@ impl FontGroup {
             .map(|family| FontGroupFamily::new(descriptor.clone(), &family))
             .collect();
 
+        //info!("families for {:?}: {:?}", descriptor, families);
+
         FontGroup {
             descriptor,
             families,
@@ -395,7 +397,10 @@ impl FontGroup {
             return font;
         }
 
+        info!("couldn't find font for '{}' ({:x}) in families {:?}", codepoint, codepoint as usize, self.families);
+
         if let Some(ref fallback) = self.last_matching_fallback {
+            info!("checking last matching fallback");
             if has_glyph(&fallback) {
                 return self.last_matching_fallback.clone();
             }
@@ -407,6 +412,7 @@ impl FontGroup {
             return font;
         }
 
+        info!("using first available font");
         self.first(&mut font_context)
     }
 
@@ -426,6 +432,7 @@ impl FontGroup {
         S: FontSource,
         P: FnMut(&FontRef) -> bool,
     {
+        //info!("checking families for font matching {:?}", self.descriptor);
         self.families
             .iter_mut()
             .filter_map(|family| family.font(&mut font_context))
@@ -446,6 +453,7 @@ impl FontGroup {
         S: FontSource,
         P: FnMut(&FontRef) -> bool,
     {
+        info!("checking fallback families");
         iter::once(FontFamilyDescriptor::default())
             .chain(fallback_font_families(codepoint).into_iter().map(|family| {
                 FontFamilyDescriptor::new(FontFamilyName::from(family), FontSearchScope::Local)
@@ -484,6 +492,7 @@ impl FontGroupFamily {
     /// subsequent calls.
     fn font<S: FontSource>(&mut self, font_context: &mut FontContext<S>) -> Option<FontRef> {
         if !self.loaded {
+            //info!("loading font matching {:?} {:?}", self.family_descriptor, self.font_descriptor);
             self.font = font_context.font(&self.font_descriptor, &self.family_descriptor);
             self.loaded = true;
         }

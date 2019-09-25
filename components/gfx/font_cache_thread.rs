@@ -51,11 +51,17 @@ impl FontTemplates {
         // regular/bold/italic/bolditalic with fixed offsets and a
         // static decision table for fallback between these values.
         for template in &mut self.templates {
+            info!("checking template {:?}", template.identifier());
             let maybe_template = template.data_for_descriptor(fctx, desc);
             if maybe_template.is_some() {
+                info!("found a template that matches in {:?}", template.identifier());
                 return maybe_template;
+            } else {
+                info!("no match template found in {:?}", template.identifier());
             }
         }
+
+        info!("need to do approximate matching");
 
         // We didn't find an exact match. Do more expensive fuzzy matching.
         // TODO(#190): Do a better job.
@@ -71,6 +77,7 @@ impl FontTemplates {
             }
         }
         if best_template_data.is_some() {
+            info!("found best approx match");
             return best_template_data;
         }
 
@@ -80,22 +87,28 @@ impl FontTemplates {
         for template in &mut self.templates {
             let maybe_template = template.get();
             if maybe_template.is_some() {
+                info!("returning first valid template");
                 return maybe_template;
             }
         }
 
+        info!("no templates present");
         None
     }
 
     pub fn add_template(&mut self, identifier: Atom, maybe_data: Option<Vec<u8>>) {
         for template in &self.templates {
             if *template.identifier() == identifier {
+                info!("found existing template matching {:?}; ignoring", identifier);
                 return;
             }
         }
 
-        if let Ok(template) = FontTemplate::new(identifier, maybe_data) {
+        if let Ok(template) = FontTemplate::new(identifier.clone(), maybe_data) {
+            info!("adding template for {}", identifier);
             self.templates.push(template);
+        } else {
+            info!("couldn't create template for {}", identifier);
         }
     }
 }
@@ -243,7 +256,7 @@ impl FontCache {
                 let channel_to_self = self.channel_to_self.clone();
                 let bytes = Mutex::new(Vec::new());
                 let response_valid = Mutex::new(false);
-                debug!("Loading @font-face {} from {}", family_name, url);
+                info!("Loading @font-face {} from {}", family_name, url);
                 fetch_async(request, &self.core_resource_thread, move |response| {
                     match response {
                         FetchResponseMsg::ProcessRequestBody |
@@ -279,7 +292,7 @@ impl FontCache {
                                 Ok(san) => san,
                                 Err(_) => {
                                     // FIXME(servo/fontsan#1): get an error message
-                                    debug!(
+                                    info!(
                                         "Sanitiser rejected web font: \
                                          family={} url={:?}",
                                         family_name, url
@@ -306,15 +319,19 @@ impl FontCache {
             },
             Source::Local(ref font) => {
                 let font_face_name = LowercaseString::new(&font.name);
+                info!("adding web font for {:?} ({:?})", family_name, font.name);
                 let templates = &mut self.web_families.get_mut(&family_name).unwrap();
                 let mut found = false;
                 for_each_variation(&font_face_name, |path| {
                     found = true;
+                    info!("adding template for web font for {:?}", path);
                     templates.add_template(Atom::from(&*path), None);
                 });
                 if found {
+                    info!("found variation for {:?}", family_name);
                     sender.send(()).unwrap();
                 } else {
+                    info!("did not find any variations for {:?}", family_name);
                     let msg = Command::AddWebFont(family_name, sources, sender);
                     self.channel_to_self.send(msg).unwrap();
                 }
@@ -346,17 +363,20 @@ impl FontCache {
         family_name: &FontFamilyName,
     ) -> Option<Arc<FontTemplateData>> {
         let family_name = self.transform_family(family_name);
+        info!("Looking for local font family {:?}", family_name);
 
         // TODO(Issue #188): look up localized font family names if canonical name not found
         // look up canonical name
         if self.local_families.contains_key(&family_name) {
-            debug!("FontList: Found font family with name={}", &*family_name);
+            info!("FontList: Found font family with name={}", &*family_name);
             let s = self.local_families.get_mut(&family_name).unwrap();
 
             if s.templates.is_empty() {
                 for_each_variation(&family_name, |path| {
                     s.add_template(Atom::from(&*path), None);
                 });
+            } else {
+                info!("already have templates");
             }
 
             // TODO(Issue #192: handle generic font families, like 'serif' and 'sans-serif'.
@@ -364,7 +384,7 @@ impl FontCache {
 
             s.find_font_for_style(template_descriptor, &self.font_context)
         } else {
-            debug!(
+            info!(
                 "FontList: Couldn't find font family with name={}",
                 &*family_name
             );
@@ -391,11 +411,13 @@ impl FontCache {
         let webrender_api = &self.webrender_api;
         let webrender_fonts = &mut self.webrender_fonts;
 
+        info!("fetching template info for {}", template.identifier);
         let font_key = *webrender_fonts
             .entry(template.identifier.clone())
             .or_insert_with(|| {
                 let font_key = webrender_api.generate_font_key();
                 let mut txn = webrender_api::Transaction::new();
+                info!("no entry, getting memory bytes and native font");
                 match (template.bytes_if_in_memory(), template.native_font()) {
                     (Some(bytes), _) => txn.add_raw_font(font_key, bytes, 0),
                     (None, Some(native_font)) => txn.add_native_font(font_key, native_font),

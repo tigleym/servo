@@ -19,15 +19,17 @@ pub fn for_each_variation<F>(family_name: &str, mut callback: F)
 where
     F: FnMut(String),
 {
-    debug!("Looking for faces of family: {}", family_name);
+    info!("Looking for faces of family: {}", family_name);
 
     let family_collection = core_text::font_collection::create_for_family(family_name);
-    if let Some(family_collection) = family_collection {
-        if let Some(family_descriptors) = family_collection.get_descriptors() {
-            for family_descriptor in family_descriptors.iter() {
-                callback(family_descriptor.font_name());
-            }
+    info!("got a family collection");
+    if let Some(family_descriptors) = family_collection.get_descriptors() {
+        info!("got descriptors");
+        for family_descriptor in family_descriptors.iter() {
+            callback(family_descriptor.font_name());
         }
+    } else {
+        info!("no descriptors");
     }
 }
 
